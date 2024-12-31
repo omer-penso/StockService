@@ -1,9 +1,11 @@
 from flask import Flask, jsonify, request
-import uuid
+#import uuid
 import requests
 import os
 import sys
 from datetime import datetime
+from pymongo import MongoClient
+from bson.objectid import ObjectId
 
 # Retrieve the API key from the environment variable
 api_key = os.getenv("API_KEY")
@@ -13,8 +15,12 @@ if not api_key:
 
 app = Flask(__name__)
 
-# In-memory storage for stocks
-stocks = {}
+# MongoDB Connection
+db_host = os.getenv("DB_HOST", "localhost")
+db_name = os.getenv("DB_NAME", "stocks_db")
+client = MongoClient(f"mongodb://{db_host}:27017/")
+db = client[db_name]
+stocks_collection = db["stocks"]
 
 
 # Helper function to validate required fields
@@ -62,11 +68,15 @@ def validate_date_format(date_str):
 def get_stocks():
     try:
         query_params = request.args
+        stocks = list(stocks_collection.find(query_params))
+        for stock in stocks:
+            stock['_id'] = str(stock['_id'])
+
         if not query_params:
-            return jsonify(list(stocks.values())), 200
+            return jsonify(stocks), 200
 
         filtered_stocks = []
-        for stock in stocks.values():
+        for stock in stocks:
             match = all(str(stock.get(key, '')).lower() == value.lower()
                         for key, value in query_params.items())
             if match:
@@ -85,18 +95,17 @@ def add_stock():
             return jsonify({"error": "Expected application/json media type"}), 415
 
         data = request.get_json()
-        for stock in stocks.values():
-            if stock['symbol'].lower() == data['symbol'].lower():
-                return jsonify({"error": "Malformed data"}), 400
+
+        # Check if the stock symbol already exists
+        if stocks_collection.find_one({"symbol": data['symbol'].upper()}):
+            return jsonify({"error": "Symbol already exists"}), 400
 
         required_fields = ['symbol', 'purchase_price', 'shares']
         is_valid, error_response = validate_required_fields(data, required_fields)
         if not is_valid:
             return jsonify(error_response), 400
 
-        new_id = str(uuid.uuid4())
         stock = {
-            'id': new_id,
             'name': data.get('name', 'NA'),
             'symbol': data['symbol'].upper(),
             'purchase_price': round(data['purchase_price'], 2),
@@ -104,8 +113,9 @@ def add_stock():
             'shares': data['shares']
         }
 
-        stocks[new_id] = stock
-        return jsonify({"id": new_id}), 201
+        result = stocks_collection.insert_one(stock)
+
+        return jsonify({"_id": str(result.inserted_id)}), 201
     except Exception as e:
         return jsonify({"server error": str(e)}), 500
 
@@ -113,9 +123,11 @@ def add_stock():
 @app.route('/stocks/<stock_id>', methods=['GET'])
 def get_stock(stock_id):
     try:
-        return jsonify(stocks[stock_id]), 200
-    except KeyError:
-        return jsonify({"error": "Not found"}), 404
+        stock = stocks_collection.find_one({"_id": ObjectId(stock_id)})
+        if not stock:
+            return jsonify({"error": "Not found"}), 404
+        stock['_id'] = str(stock['_id'])
+        return jsonify(stock), 200
     except Exception as e:
         return jsonify({"server error": str(e)}), 500
 
@@ -123,10 +135,10 @@ def get_stock(stock_id):
 @app.route('/stocks/<stock_id>', methods=['DELETE'])
 def delete_stock(stock_id):
     try:
-        del stocks[stock_id]
+        result = stocks_collection.delete_one({"_id": ObjectId(stock_id)})
+        if result.deleted_count == 0:
+            return jsonify({"error": "Not found"}), 404
         return '', 204
-    except KeyError:
-        return jsonify({"error": "Not found"}), 404
     except Exception as e:
         return jsonify({"server error": str(e)}), 500
 
@@ -134,10 +146,6 @@ def delete_stock(stock_id):
 @app.route('/stocks/<stock_id>', methods=['PUT'])
 def update_stock(stock_id):
     try:
-        # Check if the stock exists
-        if stock_id not in stocks:
-            return jsonify({"error": "Not found"}), 404
-
         # Validate content type
         content_type = request.headers.get('Content-Type')
         if content_type != 'application/json':
@@ -146,9 +154,14 @@ def update_stock(stock_id):
         # Get the request data
         data = request.get_json()
 
-        # Ensure the 'id' field is present and matches the stock_id in the URL
+        # Validate that the stock exists in the database
+        existing_stock = stocks_collection.find_one({"_id": ObjectId(stock_id)})
+        if not existing_stock:
+            return jsonify({"error": "Not found"}), 404
+
+        # Validate that the payload includes the `id` field and it matches the stock_id
         if "id" not in data or data["id"] != stock_id:
-            return jsonify({"error": "Malformed data"}), 400
+            return jsonify({"error": "Malformed data - 'id' field must match URL"}), 400
 
         # Validate required fields
         required_fields = ['id', 'symbol', 'purchase_price', 'shares']
@@ -156,18 +169,21 @@ def update_stock(stock_id):
         if not is_valid:
             return jsonify(error_response), 400
 
-        # Update the stock with provided data, keeping existing values for missing fields
-        stock = stocks[stock_id]
-        stock.update({
-            'id': data['id'],  # Ensure the ID matches
-            'name': data.get('name', stock['name']),  # Keep existing value if not provided
-            'symbol': data['symbol'].upper(),
-            'purchase_price': round(data['purchase_price'], 2),
-            'purchase_date': data.get('purchase_date', stock['purchase_date']),  # Keep existing value
-            'shares': data['shares']
-        })
+        # Update stock in MongoDB
+        update_data = {
+            "$set": {
+                "name": data.get('name', 'NA'),
+                "symbol": data['symbol'].upper(),
+                "purchase_price": round(data['purchase_price'], 2),
+                "purchase_date": data.get('purchase_date', 'NA'),
+                "shares": data['shares']
+            }
+        }
+        result = stocks_collection.update_one({"_id": ObjectId(stock_id)}, update_data)
+        if result.matched_count == 0:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify({"_id": stock_id}), 200
 
-        return jsonify({"id": stock_id}), 200
     except Exception as e:
         return jsonify({"server error": str(e)}), 500
 
@@ -175,7 +191,7 @@ def update_stock(stock_id):
 @app.route('/stock-value/<stock_id>', methods=['GET'])
 def get_stock_value(stock_id):
     try:
-        stock = stocks.get(stock_id)
+        stock = stocks_collection.find_one({"_id": ObjectId(stock_id)})
         if not stock:
             return jsonify({"error": "Not found"}), 404
 
@@ -199,7 +215,7 @@ def get_stock_value(stock_id):
 def get_portfolio_value():
     try:
         total_value = 0
-        for stock in stocks.values():
+        for stock in list(stocks_collection.find()):
             stock_symbol = stock['symbol']
             stock_number_of_shares = stock['shares']
 
@@ -217,4 +233,4 @@ def get_portfolio_value():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5001)
+    app.run(host="0.0.0.0", port=5002)
