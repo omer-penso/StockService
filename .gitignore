@@ -1,0 +1,51 @@
+# Byte-compiled Python files
+*.py[cod]
+__pycache__/
+*.pyc
+
+# Virtual environments
+env/
+.venv/
+venv/
+ENV/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Docker-related files
+*.env
+Dockerfile.*
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+*.egg-info/
+dist/
+build/
+*.egg
+pip-log.txt
+
+# Unit test cache
+*.coverage
+.cache
+.nox/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Pytest files
+.pytest_cache/
+
+# Generated files
+*.bak
+*.orig
