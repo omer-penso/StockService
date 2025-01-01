@@ -13,14 +13,19 @@ if not api_key:
     print("Error: API_KEY not set in environment variables.", file=sys.stderr)
     sys.exit(1)  # Exit with a non-zero status code to indicate an error
 
+# Use the environment variable for the port, defaulting to 5002 if not provided
+port = int(os.getenv("FLASK_RUN_PORT", 5002))
+
 app = Flask(__name__)
 
 # MongoDB Connection
 db_host = os.getenv("DB_HOST", "localhost")
 db_name = os.getenv("DB_NAME", "stocks_db")
+collection_name = os.getenv("COLLECTION_NAME", "stocks2")
+
 client = MongoClient(f"mongodb://{db_host}:27017/")
 db = client[db_name]
-stocks_collection = db["stocks"]
+stocks_collection = db[collection_name]
 
 
 # Helper function to validate required fields
@@ -233,4 +238,4 @@ def get_portfolio_value():
 
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5002)
+    app.run(host="0.0.0.0", port=port)
