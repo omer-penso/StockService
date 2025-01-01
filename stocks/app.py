@@ -68,6 +68,9 @@ def validate_date_format(date_str):
     except ValueError:
         return False
 
+@app.route('/kill', methods=['GET'])
+def kill_container():
+    os._exit(1)
 
 @app.route('/stocks', methods=['GET'])
 def get_stocks():

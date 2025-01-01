@@ -14,8 +14,8 @@ port = int(os.getenv("FLASK_RUN_PORT", 5003))
 
 app = Flask(__name__)
 
-STOCKS1_URL = os.getenv("STOCKS1_URL", "http://localhost:5001")
-STOCKS2_URL = os.getenv("STOCKS2_URL", "http://localhost:5002")
+STOCKS1_URL = os.getenv("STOCKS1_URL", "http://stocks1:8000")
+STOCKS2_URL = os.getenv("STOCKS2_URL", "http://stocks2:8000")
 
 
 def fetch_stocks_from_stock_service(service_url):
@@ -42,6 +42,9 @@ def fetch_ticker_price(symbol):
         return response.json().get('price', 0), None
     return None, {"server error": "API response code " + str(response.status_code)}
 
+@app.route('/kill', methods=['GET'])
+def kill_container():
+    os._exit(1)
 
 @app.route("/capital-gains", methods=["GET"])
 def get_capital_gains():
