@@ -61,9 +61,8 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - stocks1-a
+      - stocks1-b
       - stocks2
       - capital-gains
-
-
 volumes:
   mongo_data:

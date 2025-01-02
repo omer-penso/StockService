@@ -42,9 +42,11 @@ def fetch_ticker_price(symbol):
         return response.json().get('price', 0), None
     return None, {"server error": "API response code " + str(response.status_code)}
 
+
 @app.route('/kill', methods=['GET'])
 def kill_container():
     os._exit(1)
+
 
 @app.route("/capital-gains", methods=["GET"])
 def get_capital_gains():
@@ -75,8 +77,7 @@ def get_capital_gains():
             if error_response:
                 return jsonify(error_response), 500
 
-            current_stock_value = round(shares * ticker_price, 2)
-            capital_gain = round((current_stock_value - purchase_price), 2)
+            capital_gain = round((ticker_price - purchase_price) * shares, 2)
             total_capital_gain += capital_gain
 
         return jsonify({"total_capital_gain": total_capital_gain}), 200
